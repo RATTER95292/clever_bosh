@@ -1,0 +1,129 @@
+import rospy
+import math
+from pyzbar import pyzbar
+import cv2
+import os
+from cv_bridge import CvBridge
+from sensor_msgs.msg import Image
+from clover import srv
+from std_srvs.srv import Trigger
+
+
+rospy.init_node('cv')
+bridge = CvBridge()
+image_pub = rospy.Publisher('~debug', Image)
+
+#set_effect = rospy.ServiceProxy('led/set_effect', SetLEDEffect)
+get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
+navigate = rospy.ServiceProxy('navigate', srv.Navigate)
+navigate_global = rospy.ServiceProxy('navigate_global', srv.NavigateGlobal)
+set_position = rospy.ServiceProxy('set_position', srv.SetPosition)
+set_velocity = rospy.ServiceProxy('set_velocity', srv.SetVelocity)
+set_attitude = rospy.ServiceProxy('set_attitude', srv.SetAttitude)
+set_rates = rospy.ServiceProxy('set_rates', srv.SetRates)
+land = rospy.ServiceProxy('land', Trigger)
+
+
+def navigate_wait(x=0, y=0, z=0, yaw=float('nan'), speed=0.5, frame_id='', auto_arm=False, tolerance=0.2):
+    navigate(x=x, y=y, z=z, yaw=yaw, speed=speed, frame_id=frame_id, auto_arm=auto_arm)
+
+    while not rospy.is_shutdown():
+        telem = get_telemetry(frame_id='navigate_target')
+        if math.sqrt(telem.x ** 2 + telem.y ** 2 + telem.z ** 2) < tolerance:
+            break
+        rospy.sleep(0.2)
+
+
+def moment(image):
+    moments = cv2.moments(image)
+    dM01 = moments['m01']
+    dM10 = moments['m10']
+    dArea = moments['m00']
+    x = int(dM10 / dArea)
+    y = int(dM01 / dArea)
+    return x, y
+
+
+
+def image_callback(data):
+    # img = bridge.imgmsg_to_cv2(data, 'bgr8')[110:130, 140:180][80:160, 100:220][60:180, 60:260][40:200, 40:320]
+    image = bridge.imgmsg_to_cv2(data, 'bgr8')
+
+
+
+    borshevik = cv2.inRange(image, (51, 105, 13), (97, 153, 113))
+    trava = cv2.inRange(image, (8, 147, 85), (57, 157, 111))
+    
+    h, w, _ = image.shape
+    cord_text = (w //2, h // 2)
+
+
+    obgect = {
+        'borshevik': cv2.countNonZero(borshevik),
+        'trava': cv2.countNonZero(trava)
+        }
+
+    obgect_color= max(obgect, key=obgect.get)
+    
+    try:
+        if obgect_color == 'borshevik':
+            cord_borshevik = moment(borshevik)
+            cv2.rectangle(image, (cord_borshevik[0]-20, cord_borshevik[1]-20), (cord_borshevik[0]+20, cord_borshevik[1]+20), (0, 0, 255), 2)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(image,'borshevik',(cord_text[0]-19,cord_text[1]-19), font, 1,(255,255,255),2) 
+        if obgect_color == 'trava':
+            cord_trava = moment(trava)
+            cv2.rectangle(image, (cord_trava[0]-20, cord_trava[1]-20), (cord_trava[0]+20, cord_trava[1]+20), (0, 0, 255), 2)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(image,'trava',(cord_text[0]-19,cord_text[1]-19), font, 1,(255,255,255),2)  
+    except ZeroDivisionError:
+        print('zero')        
+
+# def image_callback(data):
+#     img = bridge.imgmsg_to_cv2(data, 'bgr8')[110:130, 140:180] 
+#     black = cv2.inRange(img, (17, 21, 9), (29, 44, 9))
+#     white = cv2.inRange(img, (133,s 144, 112), (170, 171, 131))
+
+#     h, w, _ = img.shape
+#     centr = (w //2, h // 2)
+#     cv2.circle(img, centr, 5, (0, 255, 0), -1)
+
+
+#     if 255 in white[1]:
+#         if 255 in black[1]:
+#         	print('yes')
+#         	set_position(frame_id='body')
+#         	land()
+
+#     image_pub.publish(bridge.cv2_to_imgmsg(img, 'bgr8'))
+    
+    image_pub.publish(bridge.cv2_to_imgmsg(image, 'bgr8'))
+
+# file = open('myfile.dat', 'w')
+image_sub = rospy.Subscriber('main_camera/image_raw', Image, image_callback, queue_size=1)
+rospy.spin()
+
+
+
+    # ‘r’ — открывает файл только для чтения (по умолчанию)
+    # ‘w’ — открывает файл только для записи (удаляет любой существующий файл)
+    # ‘x’ — открывает файл только для создания, возвращает ошибку, если файл существует
+    # ‘a’ — открывает файл для добавления в конец, создает файл, если он не существует
+    # ‘b’ — открывает файл в двоичном режиме
+    # ‘t’ — открывает файл в текстовом режиме (по умолчанию)
+#     1
+# 2
+	
+# # Открывает файл для чтения и записи, создает файл, если он не существует
+# file = open('myfile.dat', 'a+')
+# 2
+	
+# # Открывает файл для чтения и записи, создает новый файл, удаляя любой существующий
+# file = open('myfile.dat', 'w+')
+
+# txt_file = "cord.txt"
+
+# txt_file_path = os.path.join(images_and_cord_folder, txt_file)
+
+# with open(txt_file_path, 'w') as file:
+#     file.write('Point     ' + 'x   ' + 'y''\n')
